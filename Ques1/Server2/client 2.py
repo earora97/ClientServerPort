@@ -3,36 +3,50 @@ import time
 import os
 import hashlib
 import datetime
-PORT_SERVER = 62004
-PORT_CLIENT = 62005
-HOST_SERVER = ""
-HOST_CLIENT = ""
+import re
+PORT_SERVER = 62005	
+PORT_CLIENT = 62004
+HOST = ""
+
+BLOCKED=False
 
 def main():
  
 	quit=False
-	print 'Server Ram activated'
+	print 'Server2 activated'
 	#lop = 1
-	
+	global BLOCKED
+	BLOCKED=False
+
 	#Server thread
 	pid_Server = os.fork()
 	if pid_Server==0:
 	#in server
 		skt = socket.socket()
-		skt.bind((HOST_SERVER, PORT_SERVER))
+		skt.bind((HOST, PORT_SERVER))
 		skt.listen(5)
 		while True:
+			global BLOCKED
+			while BLOCKED:
+				p=1	
+			BLOCKED=True
 			connect_other_client, address_other_client = skt.accept()
 			print 'Got connection from', address_other_client
 			command = connect_other_client.recv(1024)
 			command = command.split(" ")
 
-			if command[0]=='quit':
-				quit=True
 
 			if command[0] == str('index') and command[1] == str('longlist'):
         			file_list = os.popen('ls ./SharedFiles -l').read()
 				file_list = file_list.split('\n')
+        			ls = os.listdir('./SharedFiles')
+				for files in ls:
+					files = './SharedFiles/' + files
+        		    		data = os.stat(files)
+        		    		te = int(data.st_mtime)
+					#te = datetime.datetime.fromtimestamp(te)
+        		    		print te
+        		    	#	print command[2], command[3]
         			print file_list
         			file_list.pop(0)
         			delimitor = '@'
@@ -47,19 +61,19 @@ def main():
 			elif command[0] == str('index') and command[1] == str('shortlist'):
         			file_list = os.popen('ls ./SharedFiles').read()
         			file_list = file_list.split('\n')
-        			ls = os.listdir('./SharedFiles')
         			i = 1
         			output = []
-        			for files in ls :
-					files = './SharedFiles/' + files
+        			for files_info in file_list[1:-1]:
+					files_info = files_info.split()
+					files = './SharedFiles/' + files_info[8]
         		    		data = os.stat(files)
         		    		te = int(data.st_mtime)
-					te = datetime.datetime.fromtimestamp(te)
+					#te = datetime.datetime.fromtimestamp(te)
         		    		print te
-        		    		print command[2], command[3]
+        		    	#	print command[2], command[3]
         		    		if te > int(command[2]) and te < int(command[3]):
-        		        		print file_list[i]
-        		        		output.append(file_list[i])
+        		        		print file_info
+        		        		output.append(' '.join(files_info))
         		    		i += 1
         			delimitor = '@'
         			output = delimitor.join(output)
@@ -68,31 +82,27 @@ def main():
 			elif command[0] == str('hash') and command[1] == str('verify') :
         			output = []
         			with open('./SharedFiles/'+command[2],'rb') as f :
-        		    		h = hashlib.md5()
-        		    		while True:
-        		        		data = f.read(1024)
-        		        		if not data:
+        	    			h = hashlib.md5()
+        	    			while True:
+        	     		   		data = f.read(1024)
+        	        			if not data:
 							break
-        		        		h.update(data)
-        		    		output.append(str(h.hexdigest()))
-        			data = os.stat(command[2])
-				te = int(data.st_mtime)
-				te = datetime.datetime.fromtimestamp(te)
-        		    	print te
+        	        			h.update(data)
+        	    			output.append(str(h.hexdigest()))
+        			data = os.stat('./SharedFiles/'+command[2])
         			output.append(str(int(data.st_mtime)))
         			delimitor = '@'
-
         			output = delimitor.join(output)
-        			print output
+        			#print output
         			connect_other_client.send(output)
 		
 			elif command[0] == str('hash') and command[1] == str('checkall') :
         			ls = os.listdir('./SharedFiles')
         			delimitor = '@'
         			output = []
-				te = int(data.st_mtime)
-				te = datetime.datetime.fromtimestamp(te)
-        		    	print te
+				#te = int(data.st_mtime)
+				#te = datetime.datetime.fromtimestamp(te)
+        		    	#print te
         			for files in ls :
         	    			output.append(str(files))
         	    			with open('./SharedFiles/'+files,'rb') as f :
@@ -107,7 +117,28 @@ def main():
 				output.append(str(int(data.st_mtime)))
         			output = delimitor.join(output)
         			connect_other_client.send(output)
-		
+			elif command[0] == str('index') and command[1] == str('regex'):
+        			file_list = os.popen('ls ./SharedFiles -l').read()
+        			file_list = file_list.split('\n')
+				print file_list
+        			ls = os.listdir('./SharedFiles')
+        			output = []
+        			for files_info in file_list[1:-1] :
+					print files_info
+					files_info = files_info.split()
+					files = './SharedFiles/' + files_info[8]
+        	    			data = os.stat(files)
+        	    			te = int(data.st_mtime)
+					te = datetime.datetime.fromtimestamp(te)
+        	    			#print te
+        	   			#print command[2]
+        	    			if re.search(command[2],files):
+        	        			#print file_list[i]
+        	        			output.append(' '.join(files_info))
+        			delimitor = '@'
+        			output = delimitor.join(output)
+        			connect_other_client.send(output)		
+
 			elif command[0] == str('download') :
         			print command[1]
 				te = int(data.st_mtime)
@@ -122,10 +153,7 @@ def main():
         			f.close()
         			print 'All Data Sent'
 			
-			if quit==True:
-				connect_other_client.close()
-				skt.close()
-				exit()
+			BLOCKED=False	
 
 	
 	#server code ends
@@ -140,44 +168,55 @@ def main():
 		
 		#client code
 		if pid_Client==0:
-			while True:
-				command = raw_input("Enter command:")
-    				skt = socket.socket()
-				skt.settimeout(10)
-    				skt.connect((HOST_CLIENT, PORT_CLIENT))
-    				skt.send(command)
-    				command = command.split(" ")
-				if command[0] == 'quit':
-					quit=True
-				
-    				if command[0] != 'download':
-        				file_list = skt.recv(1024)
-        				file_list = file_list.split('@')
-        				for files in file_list :
-        	    				print files
-				else :
-        				file_name = command[1]
-        				print file_name[1]
-        				with open('./SharedFiles/'+file_name, 'a+') as f:
-        	    				print 'Download Started'
-        	    				while True:
-							try:
-	        	        				data = skt.recv(1024)
-								print data	
-        		        				if not data:
-        		            					break
-        		        				f.write(data)
-							except socket.timeout, e:
-								if e.args[0]=='timed out':
-									break
-						print "Download Completed"
-        				print('File Downloaded Successfully')
-				if quit==True:
-					skt.close()
-					exit()
-
-
-	
+		start_time=time.time()
+		files_hashes=dict()
+		while True:
+			global BLOCKED
+			if time.time()-start_time>3 and BLOCKED==False:
+				BLOCKED=True
+				print time.time()
+				start_time = time.time()
+		
+				#get list of files in Shared Directory		
+				skt = socket.socket()
+				skt.connect((HOST_CLIENT, PORT_CLIENT))
+				command = "index longlist"
+		    		skt.send(command)
+			    	file_list = skt.recv(1024)
+		        	file_list = file_list.split('@')
+				print file_list
+				for files in file_list :
+					files = files.split()
+					file_name=files[8]
+					file_size=files[3]
+					print "file name-->",file_name
+		         		if file_name not in files_hashes.keys():
+						#new file
+						print file_name
+						skt = socket.socket()
+						skt.connect((HOST_CLIENT, PORT_CLIENT))
+						command = "hash verify "+file_name
+						skt.send(command)
+						hash_time = skt.recv(1024)
+						hash_time = hash_time.split('@')
+						hash_v = hash_time[0]
+						files_hashes[file_name] = hash_v
+						print file_name,hash_time
+						client_download(file_name,file_size)
+					else:
+						#old file
+						print("old")
+						command = "hash verify "+file_name
+						skt.send(command)
+						hash_time = skt.recv(1024)
+						hash_time = hash_time.split('@')
+						hash_v = hash_time[0][0]
+						#file modified
+						if hash_v != file_hashes[file_name]:
+							files_hashes[file_name] = hash_v
+						print file_name
+						client_download(file_name,file_size)
+				BLOCKED=False
 		#client code ended
 		
 		#error creating client thread
@@ -187,7 +226,6 @@ def main():
 		#main code
 		else:
 			#wait for server thread to terminate
-			print("hello")
 			#try:
 			while True:
 				wpid,status=os.waitpid(pid_Server, os.WUNTRACED)
